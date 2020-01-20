@@ -13,7 +13,7 @@ import random
 import pickle
 
 class CassieEnv_v2:
-  def __init__(self, traj='walking', simrate=60, clock_based=True, state_est=True, dynamics_randomization=False, no_delta=False, ik_traj=None):
+  def __init__(self, traj='walking', simrate=60, clock_based=False, state_est=False, dynamics_randomization=False, no_delta=False, ik_traj=None):
     self.sim = CassieSim("./cassie/cassiemujoco/cassie.xml")
     self.vis = None
 
@@ -95,8 +95,15 @@ class CassieEnv_v2:
     self.default_mass = self.sim.get_body_mass()
     self.default_ipos = self.sim.get_body_ipos()
     self.default_fric = self.sim.get_ground_friction()
+    self.default_rgba = self.sim.get_geom_rgba()
 
-  def step_simulation(self, action, udp=False):
+    self.critic_state = None
+
+    # This randomizes the colors of the various geoms on Cassie.
+    colors = np.hstack([self.default_rgba[:4], [np.random.uniform(0, 1) for i in range(4, self.sim.ngeom * 4)]])
+    self.sim.set_geom_rgba(colors)
+
+  def step_simulation(self, action):
 
       # maybe make ref traj only send relevant idxs?
       ref_pos, ref_vel = self.get_ref_state(self.phase + self.phase_add)
@@ -127,7 +134,7 @@ class CassieEnv_v2:
 
       self.cassie_state = self.sim.step_pd(self.u)
 
-  def step(self, action):
+  def step(self, action, return_omniscient_state=False):
       for _ in range(self.simrate):
           self.step_simulation(action)
 
@@ -149,9 +156,12 @@ class CassieEnv_v2:
       if reward < 0.3:
           done = True
 
-      return self.get_full_state(), reward, done, {}
+      if return_omniscient_state:
+        return self.get_full_state(), self.get_omniscient_state(), reward, done, {}
+      else:
+        return self.get_full_state(), reward, done, {}
 
-  def reset(self):
+  def reset(self, return_omniscient_state=False):
       self.phase = random.randint(0, self.phaselen)
       self.time = 0
       self.counter = 0
@@ -161,18 +171,11 @@ class CassieEnv_v2:
       self.sim.set_qpos(qpos)
       self.sim.set_qvel(qvel)
 
-      # Need to reset u? Or better way to reset cassie_state than taking step
-      self.cassie_state = self.sim.step_pd(self.u)
-
-      self.speed = (random.randint(0, 10)) / 10
-      # maybe make ref traj only send relevant idxs?
-      ref_pos, ref_vel = self.get_ref_state(self.phase)
-
       # Randomize dynamics:
       if self.dynamics_randomization:
           damp = self.default_damping
-          weak_factor = 1.2
-          strong_factor = 1.7
+          weak_factor = 1.1
+          strong_factor = 1.1
           pelvis_damp_range = [[damp[0], damp[0]], 
                                [damp[1], damp[1]], 
                                [damp[2], damp[2]], 
@@ -200,8 +203,8 @@ class CassieEnv_v2:
           damp_range = pelvis_damp_range + side_damp + side_damp
           damp_noise = [np.random.uniform(a, b) for a, b in damp_range]
 
-          hi = 1.2
-          lo = 0.8
+          hi = 1.1
+          lo = 0.9
           m = self.default_mass
           pelvis_mass_range      = [[lo*m[1],  hi*m[1]]]  # 1
           hip_mass_range         = [[lo*m[2],  hi*m[2]],  # 2->4 and 14->16
@@ -227,22 +230,38 @@ class CassieEnv_v2:
           mass_range = [[0, 0]] + pelvis_mass_range + side_mass + side_mass
           mass_noise = [np.random.uniform(a, b) for a, b in mass_range]
 
-          delta = 0.0025
+          delta = 0.000
           com_noise = [0, 0, 0] + [self.default_ipos[i] + np.random.uniform(-delta, delta) for i in range(3, len(self.default_ipos))]
 
-          fric_noise = [np.random.uniform(0.2, 1.5)] + list(self.default_fric[1:])
+          fric_noise = [np.random.uniform(0.6, 1.2)] + [np.random.uniform(3e-3, 8e-3)] + list(self.default_fric[2:])
 
           self.sim.set_dof_damping(np.clip(damp_noise, 0, None))
           self.sim.set_body_mass(np.clip(mass_noise, 0, None))
           self.sim.set_body_ipos(np.clip(com_noise, 0, None))
           self.sim.set_ground_friction(np.clip(fric_noise, 0, None))
+      else:
+          self.sim.set_dof_damping(self.default_damping)
+          self.sim.set_body_mass(self.default_mass)
+          self.sim.set_body_ipos(self.default_ipos)
+          self.sim.set_ground_friction(self.default_fric)
+
 
       self.sim.set_const()
 
       # Need to reset u? Or better way to reset cassie_state than taking step
       self.cassie_state = self.sim.step_pd(self.u)
 
-      return self.get_full_state()
+      self.speed = (random.randint(0, 10)) / 10
+      # maybe make ref traj only send relevant idxs?
+      ref_pos, ref_vel = self.get_ref_state(self.phase)
+
+      actor_state  = self.get_full_state()
+      critic_state = self.get_omniscient_state()
+
+      if return_omniscient_state:
+        return actor_state, critic_state
+      else:
+        return actor_state
 
   # NOTE: this reward is slightly different from the one in Xie et al
   # see notes for details
@@ -266,8 +285,9 @@ class CassieEnv_v2:
           target = ref_pos[j]
           actual = qpos[j]
 
-          joint_error += 30 * weight[i] * (target - actual) ** 2
+          joint_error += 20 * weight[i] * (target - actual) ** 2
 
+      """
       # center of mass: x, y, z
       for j in [0, 1, 2]:
           target = ref_pos[j]
@@ -275,14 +295,25 @@ class CassieEnv_v2:
 
           # NOTE: in Xie et al y target is 0
 
-          com_error += (target - actual) ** 2
-      
-      # COM orientation: qx, qy, qz
-      for j in [4, 5, 6]:
-          target = ref_pos[j] # NOTE: in Xie et al orientation target is 0
-          actual = qpos[j]
+          com_error += 10 * (target - actual) ** 2
+      """
 
-          orientation_error += (target - actual) ** 2
+      forward_diff = np.abs(qvel[0] - self.speed)
+      if forward_diff < 0.05:
+         forward_diff = 0
+
+      y_vel = np.abs(qvel[1])
+      if y_vel < 0.03:
+        y_vel = 0
+
+      straight_diff = np.abs(qpos[1])
+      if straight_diff < 0.05:
+        straight_diff = 0
+
+      actual_q = qpos[3:7]
+      #target_q = ref_pos[3:7]
+      target_q = [1, 0, 0, 0]
+      orientation_error = 5 * (1 - np.inner(actual_q, target_q) ** 2)
 
       # left and right shin springs
       for i in [15, 29]:
@@ -291,10 +322,13 @@ class CassieEnv_v2:
 
           spring_error += 1000 * (target - actual) ** 2      
       
-      reward = 0.5 * np.exp(-joint_error) +       \
-               0.3 * np.exp(-com_error) +         \
-               0.1 * np.exp(-orientation_error) + \
-               0.1 * np.exp(-spring_error)
+      reward = 0.200 * np.exp(-joint_error) +       \
+               0.200 * np.exp(-forward_diff) +      \
+               0.100 * np.exp(-straight_diff) +     \
+               0.150 * np.exp(-y_vel) +             \
+               0.300 * np.exp(-orientation_error) + \
+               0.050 * np.exp(-spring_error)
+               #0.450 * np.exp(-com_error) +         \
 
       return reward
 
@@ -378,6 +412,11 @@ class CassieEnv_v2:
       else:
           return np.concatenate([qpos[self.pos_index], qvel[self.vel_index], ext_state])
 
+  def get_omniscient_state(self):
+      full_state = self.get_full_state()
+      omniscient_state = np.hstack((full_state, self.sim.get_dof_damping(), self.sim.get_body_mass(), self.sim.get_body_ipos(), self.sim.get_ground_friction))
+      return omniscient_state
+
   def render(self):
       if self.vis is None:
           self.vis = CassieVis(self.sim, "./cassie/cassiemujoco/cassie.xml")
@@ -416,26 +455,41 @@ class CassieEnv_v2:
 
 
 # qpos layout
-# [ 0] Pelvis y
-# [ 1] Pelvis z
-# [ 2] Pelvis orientation qw
-# [ 3] Pelvis orientation qx
-# [ 4] Pelvis orientation qy
-# [ 5] Pelvis orientation qz
-# [ 6] Left hip roll         (Motor [0])
-# [ 7] Left hip yaw          (Motor [1])
-# [ 8] Left hip pitch        (Motor [2])
-# [ 9] Left knee             (Motor [3])
-# [10] Left shin                        (Joint [0])
-# [11] Left tarsus                      (Joint [1])
-# [12] Left foot             (Motor [4], Joint [2])
-# [13] Right hip roll        (Motor [5])
-# [14] Right hip yaw         (Motor [6])
-# [15] Right hip pitch       (Motor [7])
-# [16] Right knee            (Motor [8])
-# [17] Right shin                       (Joint [3])
-# [18] Right tarsus                     (Joint [4])
-# [19] Right foot            (Motor [9], Joint [5])
+# [ 0] Pelvis x
+# [ 1] Pelvis y
+# [ 2] Pelvis z
+# [ 3] Pelvis orientation qw
+# [ 4] Pelvis orientation qx
+# [ 5] Pelvis orientation qy
+# [ 6] Pelvis orientation qz
+# [ 7] Left hip roll         (Motor [0])
+# [ 8] Left hip yaw          (Motor [1])
+# [ 9] Left hip pitch        (Motor [2])
+# [10] Left achilles rod qw
+# [11] Left achilles rod qx
+# [12] Left achilles rod qy
+# [13] Left achilles rod qz
+# [14] Left knee             (Motor [3])
+# [15] Left shin                        (Joint [0])
+# [16] Left tarsus                      (Joint [1])
+# [17] Left heel spring
+# [18] Left foot crank
+# [19] Left plantar rod
+# [20] Left foot             (Motor [4], Joint [2])
+# [21] Right hip roll        (Motor [5])
+# [22] Right hip yaw         (Motor [6])
+# [23] Right hip pitch       (Motor [7])
+# [24] Right achilles rod qw
+# [25] Right achilles rod qx
+# [26] Right achilles rod qy
+# [27] Right achilles rod qz
+# [28] Right knee            (Motor [8])
+# [29] Right shin                       (Joint [3])
+# [30] Right tarsus                     (Joint [4])
+# [31] Right heel spring
+# [32] Right foot crank
+# [33] Right plantar rod
+# [34] Right foot            (Motor [9], Joint [5])
 
 # qvel layout
 # [ 0] Pelvis x

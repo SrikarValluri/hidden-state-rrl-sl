@@ -13,7 +13,7 @@ parser.add_argument("--id", type=int, help="ID for parallelization")
 args = parser.parse_args()
 
 env = partial(CassieEnv_v2, traj='walking', simrate=60, clock_based=True, state_est=True, dynamics_randomization=False, no_delta=False, ik_traj=None)()
-policy = torch.load('./trained_models_rrl/actor.pt')
+policy = torch.load('./trained_models_rrl/actor_with_no_dyn_rand.pt')
 
 
 state_vector = []

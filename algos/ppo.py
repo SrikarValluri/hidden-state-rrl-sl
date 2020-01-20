@@ -1,5 +1,6 @@
 """Proximal Policy Optimization (clip objective)."""
 from copy import deepcopy
+import os
 
 import torch
 import torch.nn as nn
@@ -13,7 +14,6 @@ from torch.nn.utils.rnn import pad_sequence
 from time import time
 
 import numpy as np
-import os
 
 import ray
 
@@ -119,10 +119,10 @@ class Buffer:
 class PPO_Worker:
   def __init__(self, actor, critic, env_fn, gamma):
     torch.set_num_threads(1)
-    self.env = env_fn()
     self.gamma = gamma
     self.actor = deepcopy(actor)
     self.critic = deepcopy(critic)
+    self.env = env_fn()
 
   def update_policy(self, new_actor_params, new_critic_params, input_norm=None):
     for p, new_p in zip(self.actor.parameters(), new_actor_params):
@@ -135,47 +135,48 @@ class PPO_Worker:
       self.actor.welford_state_mean, self.actor.welford_state_mean_diff, self.actor.welford_state_n = input_norm
 
   def collect_experience(self, max_traj_len, min_steps):
-    start = time()
+    with torch.no_grad():
+      start = time()
 
-    num_steps = 0
-    memory = Buffer(self.gamma)
-    actor  = self.actor
-    critic = self.critic
+      num_steps = 0
+      memory = Buffer(self.gamma)
+      actor  = self.actor
+      critic = self.critic
 
-    while num_steps < min_steps:
-      state = torch.Tensor(self.env.reset())
+      while num_steps < min_steps:
+        state = torch.Tensor(self.env.reset())
 
-      done = False
-      value = 0
-      traj_len = 0
+        done = False
+        value = 0
+        traj_len = 0
 
-      if hasattr(actor, 'init_hidden_state'):
-        actor.init_hidden_state()
+        if hasattr(actor, 'init_hidden_state'):
+          actor.init_hidden_state()
 
-      if hasattr(critic, 'init_hidden_state'):
-        critic.init_hidden_state()
+        if hasattr(critic, 'init_hidden_state'):
+          critic.init_hidden_state()
 
-      while not done and traj_len < max_traj_len:
-          state = torch.Tensor(state)
-          norm_state = actor.normalize_state(state, update=False)
-          action = actor(norm_state, False)
-          value = critic(norm_state)
+        while not done and traj_len < max_traj_len:
+            state = torch.Tensor(state)
+            norm_state = actor.normalize_state(state, update=False)
+            action = actor(norm_state, False)
+            value = critic(norm_state)
 
-          next_state, reward, done, _ = self.env.step(action.numpy())
+            next_state, reward, done, _ = self.env.step(action.numpy())
 
-          reward = np.array([reward])
+            reward = np.array([reward])
 
-          memory.push(state.numpy(), action.numpy(), reward, value.numpy())
+            memory.push(state.numpy(), action.numpy(), reward, value.numpy())
 
-          state = next_state
+            state = next_state
 
-          traj_len += 1
-          num_steps += 1
+            traj_len += 1
+            num_steps += 1
 
-      value = (not done) * critic(torch.Tensor(state)).numpy()
-      memory.end_trajectory(terminal_value=value)
+        value = (not done) * critic(torch.Tensor(state)).numpy()
+        memory.end_trajectory(terminal_value=value)
 
-    return memory
+      return memory
 
 class PPO:
     def __init__(self, actor, critic, env_fn, args):
@@ -264,7 +265,7 @@ class PPO:
       critic_param_id = ray.put(list(self.critic.parameters()))
       norm_id = ray.put([self.actor.welford_state_mean, self.actor.welford_state_mean_diff, self.actor.welford_state_n])
 
-      steps = num_steps // len(self.workers)
+      steps = max(num_steps // len(self.workers), max_traj_len)
 
       for w in self.workers:
         w.update_policy.remote(actor_param_id, critic_param_id, input_norm=norm_id)
@@ -313,7 +314,8 @@ def eval_policy(policy, env, update_normalizer, min_timesteps=2000, max_traj_len
   with torch.no_grad():
     steps = 0
     ep_returns = []
-    while steps < min_timesteps: # Prenormalize
+    while steps < min_timesteps:
+      env.dynamics_randomization = False
       state = torch.Tensor(env.reset())
       done = False
       traj_len = 0
@@ -385,6 +387,9 @@ def run_experiment(args):
     if args.save_actor is None and logger is not None:
       args.save_actor = os.path.join(logger.dir, 'actor.pt')
 
+    if args.save_critic is None and logger is not None:
+      args.save_critic = os.path.join(logger.dir, 'critic.pt')
+
     print()
     print("Proximal Policy Optimization:")
     print("\tseed:               {}".format(args.seed))
@@ -418,6 +423,9 @@ def run_experiment(args):
         best_reward = eval_reward
         if args.save_actor is not None:
           torch.save(algo.actor, args.save_actor)
+        
+        if args.save_critic is not None:
+          torch.save(algo.critic, args.save_critic)
 
       if logger is not None:
         logger.add_scalar(args.env_name + '/kl', kl, itr)
@@ -425,3 +433,4 @@ def run_experiment(args):
         logger.add_scalar(args.env_name + '/actor_loss', a_loss, itr)
         logger.add_scalar(args.env_name + '/critic_loss', c_loss, itr)
       itr += 1
+    print("Finished ({} of {}).".format(timesteps, args.timesteps))
