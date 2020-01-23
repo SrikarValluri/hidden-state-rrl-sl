@@ -100,8 +100,8 @@ class CassieEnv_v2:
     self.critic_state = None
 
     # This randomizes the colors of the various geoms on Cassie.
-    colors = np.hstack([self.default_rgba[:4], [np.random.uniform(0, 1) for i in range(4, self.sim.ngeom * 4)]])
-    self.sim.set_geom_rgba(colors)
+    #colors = np.hstack([self.default_rgba[:4], [np.random.uniform(0, 1) for i in range(4, self.sim.ngeom * 4)]])
+    #self.sim.set_geom_rgba(colors)
 
   def step_simulation(self, action):
 
@@ -230,14 +230,18 @@ class CassieEnv_v2:
           mass_range = [[0, 0]] + pelvis_mass_range + side_mass + side_mass
           mass_noise = [np.random.uniform(a, b) for a, b in mass_range]
 
-          delta = 0.000
-          com_noise = [0, 0, 0] + [self.default_ipos[i] + np.random.uniform(-delta, delta) for i in range(3, len(self.default_ipos))]
+          delta = 0.07
+          com_noise = [0, 0, 0] + [np.random.uniform(-delta, delta)] + list(self.default_ipos[4:])
+          #print("should be ", com_noise[3])
+          #print(len(com_noise), len(self.default_ipos))
+          #print(com_noise[:10])
+          #print(self.default_ipos[:10])
 
-          fric_noise = [np.random.uniform(0.6, 1.2)] + [np.random.uniform(3e-3, 8e-3)] + list(self.default_fric[2:])
+          fric_noise = [np.random.uniform(0.4, 1.2)] + [np.random.uniform(3e-3, 8e-3)] + list(self.default_fric[2:])
 
           self.sim.set_dof_damping(np.clip(damp_noise, 0, None))
           self.sim.set_body_mass(np.clip(mass_noise, 0, None))
-          self.sim.set_body_ipos(np.clip(com_noise, 0, None))
+          self.sim.set_body_ipos(com_noise)
           self.sim.set_ground_friction(np.clip(fric_noise, 0, None))
       else:
           self.sim.set_dof_damping(self.default_damping)
@@ -285,16 +289,14 @@ class CassieEnv_v2:
           target = ref_pos[j]
           actual = qpos[j]
 
-          joint_error += 20 * weight[i] * (target - actual) ** 2
+          joint_error += 30 * weight[i] * (target - actual) ** 2
 
       """
       # center of mass: x, y, z
       for j in [0, 1, 2]:
           target = ref_pos[j]
           actual = qpos[j]
-
           # NOTE: in Xie et al y target is 0
-
           com_error += 10 * (target - actual) ** 2
       """
 
@@ -324,8 +326,8 @@ class CassieEnv_v2:
       
       reward = 0.200 * np.exp(-joint_error) +       \
                0.200 * np.exp(-forward_diff) +      \
-               0.100 * np.exp(-straight_diff) +     \
-               0.150 * np.exp(-y_vel) +             \
+               0.050 * np.exp(-straight_diff) +     \
+               0.200 * np.exp(-y_vel) +             \
                0.300 * np.exp(-orientation_error) + \
                0.050 * np.exp(-spring_error)
                #0.450 * np.exp(-com_error) +         \
