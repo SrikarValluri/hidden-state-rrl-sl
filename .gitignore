@@ -119,9 +119,6 @@ venv.bak/
 ray_timeline.json
 
 # trained models
-/trained_models_sl/*
-/trained_models_rrl/*
 /data/*
-
 # logging directory
 /logs
