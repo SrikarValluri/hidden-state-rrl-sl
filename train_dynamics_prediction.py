@@ -7,8 +7,8 @@ import pickle
 
 from functools import partial
 
-state_vector = pickle.load(open("./data/state_vector.p", "rb"))
-state_labels = np.reshape(pickle.load( open("./data/state_labels.p", "rb")), (-1, 1))
+state_vector = pickle.load(open("./data/state_vector_with_dyn_rand.p", "rb"))
+state_labels = pickle.load(open("./data/state_labels_with_dyn_rand.p", "rb"))
 
 s = np.arange(state_vector.shape[0])
 np.random.shuffle(s)
@@ -16,55 +16,63 @@ np.random.shuffle(s)
 state_vector = torch.from_numpy(state_vector[s])
 state_labels = torch.from_numpy(state_labels[s])
 
-print(state_vector.shape)
-print(state_labels.shape)
+state_vector_train = state_vector[0:500000]
+state_labels_train = state_labels[0:500000][:,0] 
 
+state_vector_test = state_vector[500000:750000]
+state_labels_test = state_labels[500000:750000][:,0]
 
-state_vector_train = state_vector[0:1490000]
-state_labels_train = state_labels[0:1490000]
+print(state_vector_train)
+print(state_labels_train)
 
-state_vector_test = state_vector[1490000:1500000]
-state_labels_test = state_labels[1490000:1500000]
+input_nodes, hidden_nodes, output_nodes, batch_size = 512, 512, 1, 100
 
-print(state_vector)
-print(state_labels)
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.fc1 = nn.Linear(512, 512)
+        self.fc2 = nn.Linear(512, 512)
+        self.fc3 = nn.Linear(512, 1)
+    
+    def forward(self, x):
+        x = self.fc1(x)
+        x = torch.relu(x)
+        x = self.fc2(x)
+        x = torch.relu(x)
+        x = self.fc3(x)
+        return x
 
-input_nodes, hidden_nodes, output_nodes, batch_size = 46, 46, 2, 100
+model = Net()
 
-model = nn.Sequential(nn.Linear(input_nodes, hidden_nodes), nn.ReLU(), nn.Linear(hidden_nodes, output_nodes), nn.Sigmoid())
+criterion = nn.MSELoss()
 
-criterion = torch.nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-
-for epoch in range(100):
+for epoch in range(10):
     permutation = torch.randperm(state_vector_train.shape[0])
-    print('Epoch: ', epoch)
     for data in range(0, state_vector_train.shape[0], batch_size):
         optimizer.zero_grad()
         # Forward Propagation
         indices = permutation[data:data+batch_size]
         batch_x, batch_y = state_vector_train[indices], state_labels_train[indices]
-        outputs = model.forward(batch_x.float())    # Compute and print loss
-        loss = criterion(outputs, batch_y.float())
-        print('data: ', data,' loss: ', loss.item())    # Zero the gradients
+        batch_y = batch_y.unsqueeze(1)
+        print(batch_x.shape, batch_y.shape)
+        output = model(batch_x.float())    # Compute and print loss
+        loss = criterion(output, batch_y.float())
+        print('epoch: ', epoch, 'data: ', data,' loss: ', loss.item())    # Zero the gradients
         
-        # perform a backward pass (backpropagation)
         loss.backward()
-        
-        # Update the parameters
         optimizer.step()
-    pickle.dump(model, open("model.p", "wb"))
 
-correct = 0
-wrong = 0
+    pickle.dump(model, open("./trained_models_sl/Adam_10epoch_1e-4lr_500000:250000.p", "wb"))
 
+model = pickle.load(open("./trained_models_sl/Adam_10epoch_1e-4lr_500000:250000.p", "rb"))
+model.eval()
+
+
+with torch.no_grad():
+    predict = model(state_vector_test.float())
+    loss = criterion(predict, state_labels_test.unsqueeze(1).float())
+    print(loss)
 for data in range(0, 1000):
-    y_pred = model(state_vector_test[data].unsqueeze(0).float())
-    if (torch.norm(model(state_vector_test[data].unsqueeze(0).float())) > 0.5 and torch.norm(state_labels_test[data].unsqueeze(0).float()) > 0.5) or (torch.norm(model(state_vector_test[data].unsqueeze(0).float())) <= 0.5 and torch.norm(state_labels_test[data].unsqueeze(0).float()) <= 0.5):
-        print("correct")
-        correct += 1
-    else:
-        print("wrong")
-        wrong += 1
-print(correct/(correct + wrong) * 100)
+    print("Predicted: ", predict[data], "Actual: ", state_labels_test[data], "Loss: ", loss.item())

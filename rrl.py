@@ -159,7 +159,7 @@ if __name__ == "__main__":
     parser.add_argument("--env_name",               default='Cassie-v0',   type=str)
     parser.add_argument("--traj_len",       "-tl",  default=400,           type=int)      # max trajectory length for environment
     parser.add_argument("--prenormalize_steps",     default=10000,         type=int)      
-    parser.add_argument("--num_steps",              default=5000,          type=int)      
+    parser.add_argument("--num_steps",              default=50000,          type=int)      
     parser.add_argument("--recurrent",              action='store_true')
 
     parser.add_argument('--discount',               default=0.99,          type=float)    # the discount factor
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("--entropy_coeff",          default=0.0,           type=float)
     parser.add_argument("--grad_clip",              default=0.05,          type=float)
     parser.add_argument("--batch_size",             default=64,            type=int)      # batch size for policy update
-    parser.add_argument("--epochs",                 default=3,             type=int)      # number of updates per iter
+    parser.add_argument("--epochs",                 default=12,             type=int)      # number of updates per iter
 
     parser.add_argument("--save_actor",             default=None,          type=str)
     parser.add_argument("--save_critic",            default=None,          type=str)

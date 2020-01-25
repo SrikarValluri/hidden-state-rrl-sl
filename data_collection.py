@@ -29,7 +29,7 @@ for i in range(1000):
         eval_reward = 0
         if hasattr(policy, 'init_hidden_state'):
             policy.init_hidden_state()
-        while not done and timesteps < 300:
+        while timesteps < 300:
             if hasattr(env, 'simrate'):            
                 state = policy.normalize_state(state, update=False)
                 action = policy.forward(torch.Tensor(state)).detach().numpy()
@@ -41,16 +41,12 @@ for i in range(1000):
                     env.render()
                 eval_reward += reward
                 timesteps += 1
-                if timesteps > 249 and timesteps <= 299:
+                if timesteps > 149 and timesteps <= 199:
                     state_vector.append(hidden_vector.tolist())
                     state_labels.append([env.sim.get_body_ipos()[3], env.sim.get_ground_friction()[0], env.sim.get_ground_friction()[1]])
 
-# print(np.array(state_vector).shape)
-# print(np.array(state_labels).shape)
-# print(np.array(state_labels))
-
 state_vector = np.array(state_vector)
-state_labels = np.ndarray.flatten(np.array(state_labels))
+state_labels = np.array(state_labels)
 v = "state_vector" + str(args.id) + ".p"
 l = "state_labels" + str(args.id) + ".p"
 
