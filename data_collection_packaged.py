@@ -18,7 +18,7 @@ for i in range(25):
 
 print(np.ndarray.flatten(np.array(v)).shape)
 state_vector = np.reshape(np.ndarray.flatten(np.array(state_vector)), (-1, 512))
-state_labels = np.reshape(np.ndarray.flatten(np.array(state_labels)), (-1, 3))
+state_labels = np.reshape(np.ndarray.flatten(np.array(state_labels)), (-1, 139))
 
 print(state_vector.shape)
 print(state_labels.shape)

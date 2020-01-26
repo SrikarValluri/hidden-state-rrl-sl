@@ -8,7 +8,7 @@ from functools import partial
 
 from cassie.cassie import CassieEnv_v2
 
-policy_hash = 'ccadea_nonrandomized.pt'
+policy_hash = 'ccadea_randomized.pt'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--id", type=int, help="ID for parallelization")
@@ -44,8 +44,8 @@ for i in range(2000):
         hidden_cells = np.ndarray.flatten(np.concatenate([np.array(policy.cells[0]), np.array(policy.cells[0])]))
         hidden_vector = np.concatenate([hidden_state, hidden_cells])
         state_vector.append(hidden_vector.tolist())
-        state_labels.append([env.sim.get_body_ipos()[3], env.sim.get_ground_friction()[0], env.sim.get_ground_friction()[1]])
-
+        state_labels.append(np.concatenate([env.sim.get_dof_damping(), env.sim.get_body_mass(), env.sim.get_body_ipos(), env.sim.get_ground_friction()]).tolist())
+        print(len(np.concatenate([env.sim.get_dof_damping(), env.sim.get_body_mass(), env.sim.get_body_ipos(), env.sim.get_ground_friction()]).tolist()))
 state_vector = np.array(state_vector)
 state_labels = np.array(state_labels)
 v = "state_vector_" + policy_hash[:-3] + "-" + str(args.id) + ".p"
