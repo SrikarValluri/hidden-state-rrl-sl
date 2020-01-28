@@ -6,7 +6,7 @@ import pickle
 state_vector = []
 state_labels = []
 
-policy_hash = 'ccadea_randomized.pt'
+policy_hash = 'ccadea_nonrandomized.pt'
 
 for i in range(25):
     v = "state_vector_" + policy_hash[:-3] + "-" + str(i + 1) + ".p"

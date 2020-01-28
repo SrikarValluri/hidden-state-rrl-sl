@@ -8,7 +8,7 @@ from functools import partial
 
 from cassie.cassie import CassieEnv_v2
 
-policy_hash = 'ccadea_randomized.pt'
+policy_hash = 'ccadea_nonrandomized.pt'
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--id", type=int, help="ID for parallelization")
@@ -16,7 +16,6 @@ args = parser.parse_args()
 
 env = partial(CassieEnv_v2, traj='walking', simrate=60, clock_based=True, state_est=True, dynamics_randomization=True, no_delta=True, ik_traj=None)()
 policy = torch.load('./trained_models_rrl/' + policy_hash)
-policy.init_hidden_state()
 
 state_vector = []
 state_labels = []
@@ -44,8 +43,11 @@ for i in range(2000):
         hidden_cells = np.ndarray.flatten(np.concatenate([np.array(policy.cells[0]), np.array(policy.cells[0])]))
         hidden_vector = np.concatenate([hidden_state, hidden_cells])
         state_vector.append(hidden_vector.tolist())
-        state_labels.append(np.concatenate([env.sim.get_dof_damping(), env.sim.get_body_mass(), env.sim.get_body_ipos(), env.sim.get_ground_friction()]).tolist())
-        print(len(np.concatenate([env.sim.get_dof_damping(), env.sim.get_body_mass(), env.sim.get_body_ipos(), env.sim.get_ground_friction()]).tolist()))
+        # node_values = policy._get_hidden_layers(torch.Tensor(state))
+        # state_vector.append(node_values.tolist())
+        state_labels.append(np.concatenate([env.sim.get_body_ipos(), env.sim.get_ground_friction(), env.sim.get_dof_damping(), env.sim.get_body_mass()]).tolist())
+        # print(len(np.concatenate([env.sim.get_body_ipos(), env.sim.get_dof_damping(), env.sim.get_body_mass(), env.sim.get_ground_friction()]).tolist()))
+        print(env.sim.get_ground_friction().shape)
 state_vector = np.array(state_vector)
 state_labels = np.array(state_labels)
 v = "state_vector_" + policy_hash[:-3] + "-" + str(args.id) + ".p"

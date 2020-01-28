@@ -6,6 +6,8 @@ from torch import sqrt
 
 from policies.base import Net
 
+import numpy as np
+
 class Actor(Net):
   def __init__(self):
     super(Actor, self).__init__()
@@ -107,6 +109,20 @@ class FF_Stochastic_Actor(Actor):
       sd = self.fixed_std
 
     return mu, sd
+
+  def _get_hidden_layers(self, state):
+    
+    node_values = []
+
+    x = state
+    for idx, layer in enumerate(self.actor_layers):
+      x = self.nonlinearity(layer(x))
+      node_values.append(np.array(x))
+
+    node_values = np.concatenate([node_values[0], node_values[1]])
+
+    return node_values
+
 
   def forward(self, state, deterministic=True):
     mu, sd = self._get_dist_params(state)
