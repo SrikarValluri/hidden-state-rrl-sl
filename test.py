@@ -22,8 +22,8 @@ class Net(nn.Module):
         x = self.fc3(x)
         return x
 
-model_randomized = pickle.load(open("./trained_models_sl/Damping_Adam_1000epoch_5e-5lr_40000+10000_randomized.p", "rb"))
-model_nonrandomized = pickle.load(open("./trained_models_sl/Damping_Adam_1000epoch_5e-5lr_40000+10000_nonrandomized.p", "rb"))
+model_randomized = pickle.load(open("./trained_models_sl/COM_Adam_1000epoch_5e-5lr_40000+10000_randomized.p", "rb"))
+model_nonrandomized = pickle.load(open("./trained_models_sl/COM_Adam_1000epoch_5e-5lr_40000+10000_nonrandomized.p", "rb"))
 
 class Net(nn.Module):
     def __init__(self):
@@ -40,7 +40,7 @@ class Net(nn.Module):
         x = self.fc3(x)
         return x
 
-model_forward = pickle.load(open("./trained_models_sl/Damping_Adam_1000epoch_5e-5lr_40000+10000_forward.p", "rb"))
+model_forward = pickle.load(open("./trained_models_sl/COM_Adam_1000epoch_5e-5lr_40000+10000_forward.p", "rb"))
 
 model_randomized.eval()
 model_nonrandomized.eval()
@@ -49,20 +49,20 @@ model_forward.eval()
 # Evaluation Data
 
 state_vector_randomized = torch.from_numpy(pickle.load(open("./data/state_vector_ccadea_randomized.p", "rb")))[40000:50000]
-state_labels_randomized = torch.from_numpy(pickle.load(open("./data/state_labels_ccadea_randomized.p", "rb")))[40000:50000][:, 99]
+state_labels_randomized = torch.from_numpy(pickle.load(open("./data/state_labels_ccadea_randomized.p", "rb")))[40000:50000][:, 3]
 
 state_vector_nonrandomized = torch.from_numpy(pickle.load(open("./data/state_vector_ccadea_nonrandomized.p", "rb")))[40000:50000]
-state_labels_nonrandomized = torch.from_numpy(pickle.load(open("./data/state_labels_ccadea_nonrandomized.p", "rb")))[40000:50000][:, 99]
+state_labels_nonrandomized = torch.from_numpy(pickle.load(open("./data/state_labels_ccadea_nonrandomized.p", "rb")))[40000:50000][:, 3]
 
 state_vector_forward = torch.from_numpy(pickle.load(open("./data/state_vector_ccadea_forward.p", "rb")))[40000:50000]
-state_labels_forward = torch.from_numpy(pickle.load(open("./data/state_labels_ccadea_forward.p", "rb")))[40000:50000][:, 99]
+state_labels_forward = torch.from_numpy(pickle.load(open("./data/state_labels_ccadea_forward.p", "rb")))[40000:50000][:, 3]
 
 
 predict_randomized = model_randomized(state_vector_randomized.float())
 predict_nonrandomized = model_nonrandomized(state_vector_nonrandomized.float())
 predict_forward = model_forward(state_vector_forward.float())
 
-err_null = torch.mean(state_labels_randomized)
+err_null = torch.mean(state_labels_nonrandomized)
 e_null = 0
 e_randomized = 0
 e_nonrandomized = 0
@@ -73,7 +73,7 @@ for data in range(0, 10000):
     err_nonrandomized = predict_nonrandomized[data]
     err_forward = predict_forward[data]
     
-    e_null += 1/10000 * (torch.abs(err_null - state_labels_randomized[data]))
+    e_null += 1/10000 * (torch.abs(err_null - state_labels_nonrandomized[data]))
     e_randomized += 1/10000 * (torch.abs(err_randomized - state_labels_randomized[data]))
     e_nonrandomized += 1/10000 * (torch.abs(err_nonrandomized - state_labels_nonrandomized[data]))
     e_forward += 1/10000 * (torch.abs(err_forward - state_labels_forward[data]))
